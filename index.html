@@ -21,7 +21,13 @@
   .pill.ok{background:rgba(10,125,59,.12);color:var(--ok);font-weight:600}
   .pill.bad{background:rgba(180,35,24,.12);color:var(--bad);font-weight:600}
   .tabs{display:flex;gap:6px;margin:16px 0 10px;background:var(--card);border:1px solid var(--bd);padding:4px;border-radius:14px}
-  .tabs button{flex:1;padding:10px 4px;border:0;border-radius:10px;background:transparent;color:var(--mut);font:inherit;font-weight:600}
+  .tabs button{flex:1;padding:10px 2px;border:0;border-radius:10px;background:transparent;color:var(--mut);font:inherit;font-size:.86rem;font-weight:600}
+  .trow{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--bd)}
+  .trow input{width:22px;height:22px;flex:none;padding:0}
+  .trow .n{flex:1;min-width:0}.trow .n b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .trow .n small{color:var(--mut);font-size:.74rem;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .trow .v{font-size:.82rem;font-weight:600;text-align:right;max-width:38%;word-break:break-all}
+  .trow.bad{opacity:.5}
   .tabs button.on{background:var(--acc);color:#fff}
   .card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:14px;margin:10px 0}
   .card h2{margin:0 0 6px;font-size:1rem}
@@ -64,9 +70,35 @@
   <div class="tabs">
     <button data-t="saldo" class="on">Saldo</button>
     <button data-t="enviar">Enviar</button>
+    <button data-t="tokens">Todos</button>
     <button data-t="receber">Receber</button>
-    <button data-t="ajuda">Como funciona</button>
+    <button data-t="ajuda">Ajuda</button>
   </div>
+
+  <!-- TODOS OS TOKENS -->
+  <section id="t-tokens" class="hide">
+    <div class="card">
+      <h2>Todos os tokens da carteira</h2>
+      <p class="note" style="margin:0">Aqui aparecem todos os tokens que o Safe tem, os conhecidos e os novos. Escolhe os que queres mover e envia-os de uma vez para outro endereço.</p>
+      <div id="allStatus" class="note" style="margin-top:8px">A ler a lista…</div>
+      <input id="allFilter" placeholder="Procurar por nome ou símbolo" style="margin-top:10px">
+      <div class="row2" style="margin-top:8px">
+        <button class="sec" id="btnSelAll" style="margin:0">Selecionar visíveis</button>
+        <button class="sec" id="btnSelNone" style="margin:0">Limpar</button>
+      </div>
+      <div id="allList" style="margin-top:6px"></div>
+    </div>
+    <div class="card" id="allSendCard">
+      <h2>Enviar os selecionados</h2>
+      <div id="allCount" class="note">Nenhum selecionado.</div>
+      <label>Para o endereço</label>
+      <input id="allTo" placeholder="0x…" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div class="warn">Muitos tokens novos são “lixo” enviado por golpistas e não valem nada. Enviá-los não costuma ser perigoso, mas confere sempre o endereço de destino.</div>
+      <button class="sec" id="btnAllTest">1. Testar os selecionados (não gasta nada)</button>
+      <button class="main" id="btnAllSend">2. Enviar selecionados</button>
+      <div id="allOut" class="note" style="margin-top:8px"></div>
+    </div>
+  </section>
 
   <!-- SALDO -->
   <section id="t-saldo">
@@ -155,8 +187,119 @@ let rpc = null, owners = [], account = null, bal = {}, ownerEth = 0n, pending = 
 /* separadores */
 document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
   document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
-  ["saldo","enviar","receber","ajuda"].forEach(t => $("t-" + t).classList.toggle("hide", t !== b.dataset.t));
+  ["saldo","enviar","tokens","receber","ajuda"].forEach(t => $("t-" + t).classList.toggle("hide", t !== b.dataset.t));
+  if (b.dataset.t === "tokens" && !allLoaded) loadAll();
 });
+
+/* ===== todos os tokens ===== */
+const MULTISEND = "0x9641d764fc13c8B624c04430C7356C1C7C8102e2"; // MultiSendCallOnly 1.4.1
+const erc20If = new ethers.Interface(ERC20_ABI);
+let all = [], allLoaded = false;
+
+async function loadAll() {
+  const st = $("allStatus"); st.textContent = "A ler a lista completa…";
+  try {
+    const r = await fetch(`https://worldchain-mainnet.explorer.alchemy.com/api/v2/addresses/${SAFE}/token-balances`);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    const arr = Array.isArray(j) ? j : (j.items || []);
+    all = [];
+    for (const x of arr) {
+      try {
+        if (!x.token || x.token.type !== "ERC-20") continue;
+        const val = BigInt(x.value || "0"); if (val <= 0n) continue;
+        all.push({ a: ethers.getAddress(x.token.address_hash || x.token.address), sym: x.token.symbol || "?", name: x.token.name || "", dec: x.token.decimals != null ? Number(x.token.decimals) : 18, val, rep: x.token.reputation || "", sel: false, bad: false });
+      } catch (e) {}
+    }
+    allLoaded = true;
+    st.textContent = `${all.length} tokens com saldo.`;
+    renderAll();
+  } catch (e) { st.innerHTML = `<span class="bad">Não consegui ler a lista: ${e.message}</span>`; }
+}
+
+function renderAll() {
+  const q = $("allFilter").value.trim().toLowerCase();
+  const box = $("allList"); box.textContent = "";
+  const vis = all.filter(t => !q || t.sym.toLowerCase().includes(q) || t.name.toLowerCase().includes(q));
+  for (const t of vis) {
+    const row = document.createElement("label"); row.className = "trow" + (t.bad ? " bad" : "");
+    row.style.margin = "0";
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = t.sel; cb.disabled = t.bad;
+    cb.onchange = () => { t.sel = cb.checked; updCount(); };
+    const n = document.createElement("div"); n.className = "n";
+    const b = document.createElement("b"); b.textContent = t.sym;
+    const s = document.createElement("small"); s.textContent = (t.name || "sem nome") + (t.bad ? " · não dá para enviar" : "");
+    n.append(b, s);
+    const v = document.createElement("div"); v.className = "v"; v.textContent = fmt(t.val, t.dec);
+    row.append(cb, n, v); box.append(row);
+  }
+  updCount();
+}
+function updCount() { const n = all.filter(t => t.sel && !t.bad).length; $("allCount").textContent = n ? `${n} selecionado(s).` : "Nenhum selecionado."; }
+$("allFilter").oninput = renderAll;
+$("btnSelAll").onclick = () => { const q = $("allFilter").value.trim().toLowerCase(); all.forEach(t => { if (!t.bad && (!q || t.sym.toLowerCase().includes(q) || t.name.toLowerCase().includes(q))) t.sel = true; }); renderAll(); };
+$("btnSelNone").onclick = () => { all.forEach(t => t.sel = false); renderAll(); };
+
+function allDest() {
+  const to = $("allTo").value.trim();
+  if (!ethers.isAddress(to)) throw new Error("O endereço de destino não é válido (0x… com 42 caracteres).");
+  if (to.toLowerCase() === SAFE.toLowerCase()) throw new Error("Esse é o endereço da própria carteira.");
+  return ethers.getAddress(to);
+}
+async function transferOk(t, dest) {
+  const res = await rpc.call({ from: SAFE, to: t.a, data: erc20If.encodeFunctionData("transfer", [dest, t.val]) });
+  if (res !== "0x" && erc20If.decodeFunctionResult("transfer", res)[0] === false) throw new Error("devolveu falso");
+}
+$("btnAllTest").onclick = async () => {
+  const out = $("allOut");
+  try {
+    const dest = allDest(), sel = all.filter(t => t.sel && !t.bad);
+    if (!sel.length) throw new Error("Seleciona pelo menos um token.");
+    let done = 0, bads = 0;
+    for (let i = 0; i < sel.length; i += 8) {
+      await Promise.all(sel.slice(i, i + 8).map(async t => { try { await transferOk(t, dest); } catch (e) { t.bad = true; t.sel = false; bads++; } done++; }));
+      out.textContent = `A testar… ${done}/${sel.length}`;
+    }
+    out.innerHTML = `<span class="ok">Teste feito.</span> ${sel.length - bads} podem ser enviados` + (bads ? `, ${bads} não deixam (ficam a cinzento e foram desmarcados).` : ".");
+    renderAll();
+  } catch (e) { out.innerHTML = `<span class="bad">${e.message}</span>`; }
+};
+function multiData(chunk, dest) {
+  const packed = ethers.concat(chunk.map(t => {
+    const d = erc20If.encodeFunctionData("transfer", [dest, t.val]);
+    return ethers.concat(["0x00", t.a, ethers.zeroPadValue("0x00", 32), ethers.zeroPadValue(ethers.toBeHex(ethers.dataLength(d)), 32), d]);
+  }));
+  return new ethers.Interface(["function multiSend(bytes transactions)"]).encodeFunctionData("multiSend", [packed]);
+}
+$("btnAllSend").onclick = async () => {
+  const out = $("allOut"), btn = $("btnAllSend");
+  try {
+    if (!account) throw new Error("Primeiro liga a MetaMask (separador Saldo).");
+    if (!owners.includes(account.toLowerCase())) throw new Error("A conta ligada não é a dona da carteira.");
+    const dest = allDest(), sel = all.filter(t => t.sel && !t.bad);
+    if (!sel.length) throw new Error("Seleciona pelo menos um token.");
+    await refreshGas();
+    if (ownerEth === 0n) throw new Error("A conta da MetaMask não tem ETH na World Chain para pagar a taxa.");
+    btn.disabled = true; await ensureChain();
+    const c = await safeWrite(), SIZE = 25, total = Math.ceil(sel.length / SIZE);
+    for (let i = 0; i < sel.length; i += SIZE) {
+      const chunk = sel.slice(i, i + SIZE), n = i / SIZE + 1;
+      const a = [MULTISEND, 0, multiData(chunk, dest), 1, 0, 0, 0, ethers.ZeroAddress, ethers.ZeroAddress, sigFor(account)];
+      out.textContent = `Lote ${n} de ${total}: a simular…`;
+      const ok = await c.execTransaction.staticCall(...a);
+      if (!ok) throw new Error(`A simulação do lote ${n} falhou.`);
+      out.textContent = `Lote ${n} de ${total}: confirma na MetaMask…`;
+      const tx = await c.execTransaction(...a);
+      out.textContent = `Lote ${n} de ${total}: a esperar confirmação…`;
+      const r = await tx.wait();
+      if (r.status !== 1) throw new Error(`O lote ${n} falhou na rede.`);
+      chunk.forEach(t => { t.val = 0n; t.sel = false; });
+    }
+    out.innerHTML = `<span class="ok">Concluído ✓</span> ${sel.length} tokens enviados.`;
+    all = all.filter(t => t.val > 0n); renderAll(); load();
+  } catch (e) { out.innerHTML = `<span class="bad">${(e.shortMessage || e.message || e)}</span>`; }
+  btn.disabled = false;
+};
 
 async function getRpc() {
   for (const url of RPCS) {
