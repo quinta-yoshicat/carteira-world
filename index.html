@@ -137,6 +137,7 @@ async function connect() {
     const acc = accs[0];
     const chain = parseInt(await eth.request({ method: "eth_chainId" }), 16);
     const isOwner = owners.includes(acc.toLowerCase());
+    $("btnConnect").textContent = isOwner ? "Ligado ✓ (és o dono)" : "Ligado (não é o dono)";
     $("connectInfo").innerHTML =
       `<div class="row"><span>Ligado</span><span class="addr">${acc}</span></div>` +
       `<div class="row"><span>Rede</span><b>${chain === CHAIN_ID ? "World Chain ✓" : "Rede " + chain + " (não é a World Chain)"}</b></div>` +
