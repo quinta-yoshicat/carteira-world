@@ -13,13 +13,20 @@
   .top{background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;margin:0 -14px;padding:22px 18px 70px;border-radius:0 0 26px 26px}
   .top h1{margin:0;font-size:1.25rem;font-weight:700}
   .top p{margin:4px 0 0;opacity:.85;font-size:.88rem}
-  .hero{background:var(--card);border:1px solid var(--bd);border-radius:18px;padding:16px;margin-top:-52px;box-shadow:0 6px 22px rgba(0,0,0,.08)}
+  .hero{background:var(--card);border:1px solid var(--bd);border-radius:18px;padding:11px 14px;margin-top:-52px;box-shadow:0 6px 22px rgba(0,0,0,.08)}
   .lbl{font-size:.75rem;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
-  .big{font-size:1.9rem;font-weight:700;margin:2px 0 4px}
+  .big{font-size:1.5rem;font-weight:700;margin:0 0 1px}
   .addr{font-family:ui-monospace,Menlo,monospace;font-size:.76rem;word-break:break-all;color:var(--mut)}
   .pill{display:inline-block;font-size:.75rem;padding:3px 10px;border-radius:99px;background:var(--in);color:var(--mut);margin-top:8px}
   .pill.ok{background:rgba(10,125,59,.12);color:var(--ok);font-weight:600}
   .pill.bad{background:rgba(180,35,24,.12);color:var(--bad);font-weight:600}
+  .topbtn{margin-top:12px;background:#fff;color:#3b2fe0;padding:11px}
+  .topinfo{margin-top:8px;font-size:.74rem;color:#fff;word-break:break-all}
+  .topinfo .addr,.topinfo .note{color:#fff;opacity:.92}
+  .topinfo .bad{display:block;background:#fff;padding:6px 10px;border-radius:10px}
+  .hrow{display:flex;align-items:center;gap:8px;margin-top:7px}
+  .hrow .pill{margin-top:0;white-space:nowrap}
+  .hrow select{flex:1;padding:6px 10px;font-size:.85rem;border-radius:10px}
   .tabs{display:flex;gap:6px;margin:16px 0 10px;background:var(--card);border:1px solid var(--bd);padding:4px;border-radius:14px}
   .tabs button{flex:1;padding:10px 2px;border:0;border-radius:10px;background:transparent;color:var(--mut);font:inherit;font-size:.86rem;font-weight:600}
   .trow{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--bd)}
@@ -58,14 +65,16 @@
   <div class="top">
     <h1>Carteira World</h1>
     <p>A tua carteira da World App, usada fora da World App.</p>
+    <button class="main topbtn" id="btnConnect">Ligar MetaMask</button>
+    <div id="connectInfo" class="topinfo"></div>
   </div>
 
   <div class="hero">
     <div class="lbl" id="netLbl"></div>
     <div class="big" id="bigWld">…</div>
     <div class="addr" id="safeAddr"></div>
-    <span class="pill" id="pillConn">Wallet não ligada</span>
-    <select id="netSel" style="margin-top:12px"><option value="480">Rede: World Chain</option><option value="10">Rede: Optimism</option></select>
+    <div class="hrow"><span class="pill" id="pillConn">Wallet não ligada</span>
+    <select id="netSel"><option value="480">Rede: World Chain</option><option value="10">Rede: Optimism</option></select></div>
   </div>
 
   <div class="tabs">
@@ -104,12 +113,6 @@
   <!-- SALDO -->
   <section id="t-saldo">
     <div class="card"><h2>Os teus tokens</h2><div id="balances" class="note">A ler da blockchain…</div></div>
-    <div class="card" id="connectCard">
-      <h2>1. Ligar a MetaMask</h2>
-      <p class="note" style="margin:0">Liga a conta que manda nesta carteira. Só para a página saber quem és. Nada é enviado.</p>
-      <button class="main" id="btnConnect">Ligar MetaMask</button>
-      <div id="connectInfo" style="margin-top:10px"></div>
-    </div>
   </section>
 
   <!-- ENVIAR -->
