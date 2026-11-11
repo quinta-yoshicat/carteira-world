@@ -198,7 +198,7 @@
 <script>
 const SAFE = "0xd047Ffa1f9eBf478Ef020f5Dce3c5AD3229Fd2B1";
 const NETS = {
-  480: { id:480, name:"World Chain", hex:"0x1e0", main:"WLD",
+  480: { id:480, name:"World Chain", hex:"0x1e0", main:"WLD", ds:"worldchain",
     rpcs:["https://worldchain-mainnet.g.alchemy.com/public","https://480.rpc.thirdweb.com","https://worldchain-mainnet.gateway.tenderly.co"],
     api:"https://worldchain-mainnet.explorer.alchemy.com", ex:"https://worldchain-mainnet.explorer.alchemy.com",
     tokens:[
@@ -206,7 +206,7 @@ const NETS = {
       { s:"USDC", n:"USD Coin",      a:"0x79A02482A880bCE3F13e09Da970dC34db4CD24d1", d:6 },
       { s:"WETH", n:"Wrapped Ether", a:"0x4200000000000000000000000000000000000006", d:18 },
       { s:"ETH",  n:"Ether",         a:null, d:18 } ] },
-  10: { id:10, name:"Optimism", hex:"0xa", main:"ETH",
+  10: { id:10, name:"Optimism", hex:"0xa", main:"ETH", ds:"optimism",
     rpcs:["https://mainnet.optimism.io","https://optimism-rpc.publicnode.com","https://1rpc.io/op"],
     api:"https://explorer.optimism.io", ex:"https://explorer.optimism.io",
     tokens:[
@@ -511,6 +511,20 @@ document.addEventListener("click", async e => {
   const b = e.target.closest && e.target.closest("[data-copy]"); if (!b) return;
   try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copiado ✓"; } catch (x) { b.textContent = "Copia o link abaixo"; }
 });
+async function refPrice(tk) {
+  if (tk.s.startsWith("USDC")) return { price: 1, liq: 1e9 };
+  const a = tk.a || "0x4200000000000000000000000000000000000006";
+  try {
+    const r = await fetch(`https://api.dexscreener.com/tokens/v1/${NET.ds}/${a}`);
+    const j = await r.json(); const arr = Array.isArray(j) ? j : (j.pairs || []);
+    let best = null;
+    for (const p of arr) {
+      const liq = (p.liquidity && p.liquidity.usd) || 0, pr = parseFloat(p.priceUsd);
+      if (pr > 0 && p.baseToken && p.baseToken.address.toLowerCase() === a.toLowerCase() && (!best || liq > best.liq)) best = { price: pr, liq };
+    }
+    return best;
+  } catch (e) { return null; }
+}
 const esc = x => String(x).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 let swapQ = null;
 function swFill() {
@@ -562,15 +576,25 @@ $("swQuote").onclick = async () => {
     const loss = fu > 0 ? (fu - tu) / fu * 100 : 0;
     let fees = 0; (est.feeCosts || []).forEach(f => fees += parseFloat(f.amountUSD || "0")); (est.gasCosts || []).forEach(g => fees += parseFloat(g.amountUSD || "0"));
     const route = (q.toolDetails && q.toolDetails.name) || q.tool || "?";
-    const big = loss > 3;
+    const pf = await refPrice(ftk), pt = await refPrice(ttk);
+    let diff = null, lowLiq = false, expected = null;
+    if (pf && pt) {
+      expected = parseFloat(ethers.formatUnits(amt, ftk.d)) * pf.price / pt.price;
+      const gotN = parseFloat(ethers.formatUnits(got, tdec));
+      diff = (expected - gotN) / expected * 100;
+      lowLiq = Math.min(pf.liq, pt.liq) < 10000;
+    }
+    const big = diff === null ? true : (diff > 3 || lowLiq);
+    const warnTxt = diff === null ? "Não consegui confirmar o preço de mercado. Confere se o número “Recebes” te parece certo." : (diff > 3 ? "Vais receber cerca de " + diff.toFixed(1) + "% a menos do que o preço de mercado." : "Esta troca tem pouca liquidez, o preço pode escorregar.");
     out.innerHTML = `<div class="sum">
       <div><span>Trocas</span><span>${fmt(amt, ftk.d)} ${esc(ftk.s)}</span></div>
       <div><span>Recebes cerca de</span><span>${fmt(got, tdec)} ${esc(ttk.s)}</span></div>
       <div><span>Mínimo garantido</span><span>${fmt(min, tdec)} ${esc(ttk.s)}</span></div>
-      <div><span>Valor enviado / recebido</span><span>$${fu.toFixed(2)} / $${tu.toFixed(2)}</span></div>
+      <div><span>Preço de mercado diz</span><span>${expected === null ? "não disponível" : "≈ " + expected.toFixed(6) + " " + esc(ttk.s)}</span></div>
+      <div><span>Diferença para o mercado</span><span>${diff === null ? "—" : diff.toFixed(1) + "%"}</span></div>
       <div><span>Taxas estimadas</span><span>$${fees.toFixed(2)}</span></div>
       <div><span>Rota</span><span>${esc(route)}</span></div></div>` +
-      (big ? `<div class="warn"><b>Atenção:</b> vais receber cerca de ${loss.toFixed(1)}% a menos do que enviaste. Em valores pequenos as taxas fixas pesam muito.<label style="margin:8px 0 0"><input type="checkbox" id="swOk" style="width:auto"> Percebo e quero continuar</label></div>` : "") +
+      (big ? `<div class="warn"><b>Atenção:</b> ${warnTxt}<label style="margin:8px 0 0"><input type="checkbox" id="swOk" style="width:auto"> Percebo e quero continuar</label></div>` : "") +
       `<button class="sec" id="swSim">1. Simular (não gasta nada)</button>
        <button class="main" id="swSend" disabled>2. Trocar a sério</button>
        <div id="swMsg" class="note" style="margin-top:8px"></div>`;
