@@ -10,5 +10,4 @@ Página **pessoal e não oficial** para o dono usar o seu próprio Safe (`0xd047
 - Troca tokens (swap) com cotação da LI.FI e verificação do preço de mercado. A única aprovação criada é do Safe para o contrato de troca devolvido pela cotação, pelo valor exato dessa troca.
 - Cada operação é assinada pela MetaMask do dono. A chave privada nunca entra na página.
 
-## Ainda não existe
-- Ponte entre redes (botão marcado como "em breve").
+- Ponte entre a World Chain e a Optimism (do cofre para o mesmo cofre), com cotações de várias pontes via LI.FI. Verifica antes que o cofre existe no destino e que a conta é a dona.

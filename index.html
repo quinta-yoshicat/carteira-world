@@ -40,6 +40,8 @@
   .sheethead b{font-size:1.1rem}.sheethead button{width:auto;padding:6px 12px;margin:0;background:var(--in);color:var(--tx);border:1px solid var(--bd);border-radius:10px;font:inherit}
   .linkrow{display:flex;gap:8px;margin-top:8px}
   .lbtn{flex:1;text-align:center;padding:10px;border-radius:12px;border:1px solid var(--bd);background:var(--in);color:var(--acc);font:inherit;font-weight:600;text-decoration:none;font-size:.9rem}
+  .opt{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid var(--bd);border-radius:12px;margin:6px 0;background:var(--in);font-size:.9rem}
+  .opt input{width:20px;height:20px;margin-top:3px;flex:none;padding:0}
   .tabs{display:flex;gap:6px;margin:16px 0 10px;background:var(--card);border:1px solid var(--bd);padding:4px;border-radius:14px}
   .tabs button{flex:1;padding:10px 2px;border:0;border-radius:10px;background:transparent;color:var(--mut);font:inherit;font-size:.86rem;font-weight:600}
   .trow{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--bd)}
@@ -183,6 +185,16 @@
     <label>Para receber este token</label><select id="swTo"></select>
     <button class="main" id="swQuote">Ver cotação</button>
     <div id="swOut" style="margin-top:12px"></div>
+  </div></div>
+
+  <div class="modal hide" id="brModal"><div class="sheet">
+    <div class="sheethead"><b>Ponte</b><button id="brClose">Fechar</button></div>
+    <p class="note" style="margin:0" id="brDir"></p>
+    <label>Token</label><select id="brTok"></select>
+    <label>Quantidade</label>
+    <div class="row2"><input id="brAmt" inputmode="decimal" placeholder="0.0"><button class="mini" id="brMax">Máx.</button></div>
+    <button class="main" id="brQuote">Ver cotações</button>
+    <div id="brOut" style="margin-top:12px"></div>
   </div></div>
 
   <div class="bottom">
@@ -626,7 +638,119 @@ async function swSend() {
     load();
   } catch (e) { m.innerHTML = `<span class="bad">Não trocou: ${esc(e.shortMessage || e.message || e)}</span>`; }
 }
-$("btnBridge").onclick = () => { $("soonInfo").textContent = "Ponte (World Chain ↔ Optimism): ainda não está pronta. Vem a seguir."; };
+/* ===== ponte (LI.FI) ===== */
+const OTHER = NETS[NET.id === 480 ? 10 : 480];
+const BR_TRY = ["across", "relaydepository", "eco", "cctp"];
+let brOpts = [], brQ = null, brCtx = null;
+const destTok = tk => OTHER.tokens.find(x => x.s === tk.s);
+async function liQuote(base, bridge) {
+  const u = new URL("https://li.quest/v1/quote");
+  Object.entries(base).forEach(([k, v]) => u.searchParams.set(k, v));
+  if (bridge) u.searchParams.set("allowBridges", bridge);
+  const r = await fetch(u); const q = await r.json();
+  return (r.ok && q.transactionRequest && q.estimate) ? q : null;
+}
+function execArgs(txs) {
+  if (txs.length === 1) return [ethers.getAddress(txs[0].to), txs[0].value, txs[0].data, 0, 0, 0, 0, ethers.ZeroAddress, ethers.ZeroAddress, sigFor(account)];
+  const data = new ethers.Interface(["function multiSend(bytes transactions)"]).encodeFunctionData("multiSend", [packTxs(txs)]);
+  return [MULTISEND, 0, data, 1, 0, 0, 0, ethers.ZeroAddress, ethers.ZeroAddress, sigFor(account)];
+}
+function brFill() {
+  const f = $("brTok"); f.textContent = "";
+  TOKENS.forEach((tk, i) => { if ((bal[tk.s] || 0n) > 0n && destTok(tk)) { const o = document.createElement("option"); o.value = i; o.textContent = tk.s + " (tens " + fmt(bal[tk.s], tk.d) + ")"; f.append(o); } });
+  $("brDir").textContent = "De " + NET.name + " para " + OTHER.name + ", do teu cofre para o teu cofre. Para o sentido contrário, muda a rede lá em cima.";
+}
+$("btnBridge").onclick = () => { brFill(); $("brOut").textContent = ""; brQ = null; $("brModal").classList.remove("hide"); };
+$("brClose").onclick = () => $("brModal").classList.add("hide");
+$("brMax").onclick = () => { const tk = TOKENS[$("brTok").value]; if (tk) $("brAmt").value = ethers.formatUnits(bal[tk.s] || 0n, tk.d); };
+async function destCheck() {
+  let p = null;
+  for (const url of OTHER.rpcs) { try { p = new ethers.JsonRpcProvider(url, OTHER.id, { staticNetwork: true }); await p.getBlockNumber(); break; } catch (e) { p = null; } }
+  if (!p) throw new Error("Não consegui ligar à " + OTHER.name + " para verificar o cofre de destino.");
+  if ((await p.getCode(SAFE)) === "0x") throw new Error("O cofre não existe na " + OTHER.name + ". Não é seguro enviar para lá.");
+  const o = (await new ethers.Contract(SAFE, SAFE_ABI, p).getOwners()).map(x => x.toLowerCase());
+  if (!o.includes(account.toLowerCase())) throw new Error("A tua conta não é dona do cofre na " + OTHER.name + ". Os fundos ficariam presos.");
+}
+$("brQuote").onclick = async () => {
+  const out = $("brOut"); brQ = null; brOpts = []; out.innerHTML = `<span class="note">A pedir cotações… (pode demorar uns segundos)</span>`;
+  try {
+    if (!account) throw new Error("Primeiro liga a MetaMask (botão no topo).");
+    if (!owners.includes(account.toLowerCase())) throw new Error("A conta ligada não é a dona da carteira.");
+    const ftk = TOKENS[$("brTok").value]; if (!ftk) throw new Error("Não tens tokens que dê para passar para a " + OTHER.name + ".");
+    const dtk = destTok(ftk);
+    let amt; try { amt = ethers.parseUnits($("brAmt").value.trim().replace(",", "."), ftk.d); } catch { throw new Error("Quantidade inválida."); }
+    if (amt <= 0n) throw new Error("A quantidade tem de ser maior que zero.");
+    if (amt > (bal[ftk.s] || 0n)) throw new Error("Não tens tanto " + ftk.s + " na carteira.");
+    await destCheck();
+    const base = { fromChain: NET.id, toChain: OTHER.id, fromToken: ftk.a || NATIVE, toToken: dtk.a || NATIVE, fromAmount: amt.toString(), fromAddress: SAFE, toAddress: SAFE, slippage: "0.005", integrator: "carteira-world" };
+    const res = await Promise.all([null, ...BR_TRY].map(b => liQuote(base, b).catch(() => null)));
+    const seen = new Set(), list = [];
+    for (const q of res) { if (!q || seen.has(q.tool)) continue; seen.add(q.tool); list.push(q); }
+    if (!list.length) throw new Error("Sem cotações para esta ponte agora. Tenta outro valor ou mais tarde.");
+    list.sort((x, y) => { const d = BigInt(y.estimate.toAmount) - BigInt(x.estimate.toAmount); return d > 0n ? 1 : d < 0n ? -1 : 0; });
+    brCtx = { ftk, dtk, amt, t: Date.now() }; brOpts = list; renderBr();
+  } catch (e) { out.innerHTML = `<div class="warn">${esc(e.message || e)}</div>`; }
+};
+function brLoss(q) {
+  const { ftk, dtk, amt } = brCtx;
+  const tdec = (q.action && q.action.toToken && q.action.toToken.decimals) || dtk.d;
+  const inF = parseFloat(ethers.formatUnits(amt, ftk.d)), gotF = parseFloat(ethers.formatUnits(BigInt(q.estimate.toAmount), tdec));
+  return { loss: (inF - gotF) / inF * 100, tdec };
+}
+function renderBr() {
+  const out = $("brOut"), dtk = brCtx.dtk;
+  let html = `<div class="note" style="margin-bottom:4px">Escolhe uma opção (a primeira é a que te deixa com mais):</div>`;
+  brOpts.forEach((q, i) => {
+    const { loss, tdec } = brLoss(q), name = (q.toolDetails && q.toolDetails.name) || q.tool, secs = q.estimate.executionDuration;
+    html += `<label class="opt"><input type="radio" name="brSel" value="${i}"${i === 0 ? " checked" : ""}><div><b>${esc(name)}</b>${i === 0 ? " · melhor" : ""}<br><span class="note">Recebes ≈ ${fmt(BigInt(q.estimate.toAmount), tdec)} ${esc(dtk.s)} · perdes ${loss.toFixed(1)}% · ~${secs ? Math.max(1, Math.round(secs / 60)) : "?"} min</span></div></label>`;
+  });
+  html += `<div id="brWarn"></div><button class="sec" id="brSim">1. Simular (não gasta nada)</button><button class="main" id="brSend" disabled>2. Enviar a sério</button><div id="brMsg" class="note" style="margin-top:8px"></div>`;
+  out.innerHTML = html;
+  out.querySelectorAll('input[name=brSel]').forEach(r => r.onchange = brSelect);
+  $("brSim").onclick = brSimulate; $("brSend").onclick = brSend; brSelect();
+}
+function brSelect() {
+  const chk = document.querySelector('input[name=brSel]:checked'); const q = brOpts[chk ? parseInt(chk.value) : 0];
+  const { ftk, amt } = brCtx, est = q.estimate, tr = q.transactionRequest, txs = [];
+  $("brSend").disabled = true; brQ = null;
+  if (ftk.a) {
+    const sp = est.approvalAddress;
+    if (!sp || sp === NATIVE) { $("brMsg").innerHTML = `<span class="bad">A cotação não trouxe o contrato a aprovar.</span>`; return; }
+    txs.push({ to: ftk.a, value: 0n, data: erc20If.encodeFunctionData("approve", [ethers.getAddress(sp), amt]) });
+  }
+  txs.push({ to: tr.to, value: BigInt(tr.value || 0), data: tr.data });
+  brQ = { txs, q };
+  const { loss } = brLoss(q);
+  $("brWarn").innerHTML = loss > 2 ? `<div class="warn"><b>Atenção:</b> vais perder cerca de ${loss.toFixed(1)}% nesta ponte, só em taxas. Em valores pequenos as taxas fixas pesam muito.<label style="margin:8px 0 0"><input type="checkbox" id="brOk" style="width:auto"> Percebo e quero continuar</label></div>` : "";
+  $("brMsg").textContent = "Simula primeiro.";
+}
+async function brSimulate() {
+  const m = $("brMsg"); m.textContent = "A simular…";
+  try {
+    if (!brQ) throw new Error("Escolhe uma opção válida.");
+    await ensureChain(); await refreshGas();
+    const ok = await (await safeWrite()).execTransaction.staticCall(...execArgs(brQ.txs));
+    if (!ok) throw new Error("A simulação deu falha.");
+    const needOk = $("brOk"), okGas = ownerEth > 0n;
+    m.innerHTML = `<span class="ok">Simulação OK.</span> A ponte devia passar.` + (okGas ? "" : ` <span class="bad">Falta ETH na conta da MetaMask para a taxa.</span>`);
+    const upd = () => { $("brSend").disabled = !okGas || (needOk && !needOk.checked); };
+    if (needOk) needOk.onchange = upd; upd();
+  } catch (e) { m.innerHTML = `<span class="bad">A simulação falhou: ${esc(e.shortMessage || e.message || e)}</span>`; $("brSend").disabled = true; }
+}
+async function brSend() {
+  const m = $("brMsg"); $("brSend").disabled = true;
+  try {
+    if (Date.now() - brCtx.t > 120000) throw new Error("A cotação expirou. Carrega outra vez em “Ver cotações”.");
+    if (execArgs(brQ.txs)[0] === MULTISEND && (await rpc.getCode(MULTISEND)) === "0x") throw new Error("O contrato de lotes não existe nesta rede.");
+    m.textContent = "Confirma na MetaMask…";
+    const tx = await (await safeWrite()).execTransaction(...execArgs(brQ.txs));
+    m.innerHTML = `Enviado. A esperar confirmação…<br><span class="addr">${esc(tx.hash)}</span>`;
+    const r = await tx.wait();
+    if (r.status !== 1) throw new Error("A transação falhou na rede.");
+    m.innerHTML = `<span class="ok">Enviado ✓</span> Os fundos chegam à ${esc(OTHER.name)} dentro de alguns minutos. Vê o estado em: <span class="addr">https://scan.li.fi/tx/${esc(tx.hash)}</span>` + txLinks(tx.hash);
+    load();
+  } catch (e) { m.innerHTML = `<span class="bad">Não enviou: ${esc(e.shortMessage || e.message || e)}</span>`; }
+}
 $("btnConnect").addEventListener("click", connect);
 load().then(async () => { try { let off = false; try { off = localStorage.getItem("cw_off") === "1"; } catch (e) {}
   if (off) return;
