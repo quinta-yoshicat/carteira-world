@@ -21,8 +21,11 @@
   .pill.ok{background:rgba(10,125,59,.12);color:var(--ok);font-weight:600}
   .pill.bad{background:rgba(180,35,24,.12);color:var(--bad);font-weight:600}
   .btnrow{display:flex;gap:8px;margin-top:12px}
-  .top button.topbtn{margin:0;flex:1;width:auto;background:#fff;color:#3b2fe0;padding:12px}
-  .top button.topbtn.on{background:rgba(255,255,255,.2);color:#fff;pointer-events:none}
+  .bottom{background:linear-gradient(135deg,var(--acc),var(--acc2));margin:22px -14px -40px;padding:16px 18px 26px;border-radius:26px 26px 0 0;color:#fff}
+  .bottom .btnrow{margin-top:0}
+  .bottom .topinfo{min-height:1em}
+  .top button.topbtn,.bottom button.topbtn{margin:0;flex:1;width:auto;background:#fff;color:#3b2fe0;padding:12px}
+  .top button.topbtn.on,.bottom button.topbtn.on{background:rgba(255,255,255,.2);color:#fff;pointer-events:none}
   .top button.discbtn{flex:0 0 36%;background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.75)}
   .topinfo{margin-top:8px;font-size:.74rem;color:#fff;word-break:break-all}
   .topinfo .addr,.topinfo .note{color:#fff;opacity:.92}
@@ -41,10 +44,10 @@
   .tabs button.on{background:var(--acc);color:#fff}
   .card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:14px;margin:10px 0}
   .card h2{margin:0 0 6px;font-size:1rem}
-  .tok{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--bd)}
+  .tok{display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--bd)}
   .tok:first-of-type{border-top:0}
-  .ico{width:38px;height:38px;border-radius:50%;background:var(--in);display:grid;place-items:center;font-weight:700;font-size:.8rem;color:var(--acc);flex:none}
-  .tok .n{flex:1;font-weight:600}.tok .n small{display:block;font-weight:400;color:var(--mut);font-size:.78rem}
+  .ico{width:30px;height:30px;border-radius:50%;background:var(--in);display:grid;place-items:center;font-weight:700;font-size:.66rem;color:var(--acc);flex:none}
+  .tok .n{flex:1;font-weight:600}.tok .n small{display:block;font-weight:400;color:var(--mut);font-size:.72rem;line-height:1.2}
   .tok .v{text-align:right;font-weight:600}
   label{display:block;font-size:.82rem;color:var(--mut);margin:12px 0 5px}
   input,select{width:100%;padding:12px;border:1px solid var(--bd);border-radius:12px;background:var(--in);color:var(--tx);font:inherit}
@@ -164,6 +167,13 @@
     </div>
     <div class="card"><details><summary>Detalhes técnicos</summary><div id="safeInfo" class="note" style="margin-top:8px"></div><div id="log"></div></details></div>
   </section>
+  <div class="bottom">
+    <div class="btnrow">
+      <button class="main topbtn" id="btnSwap">Swap</button>
+      <button class="main topbtn" id="btnBridge">Ponte</button>
+    </div>
+    <div id="soonInfo" class="topinfo"></div>
+  </div>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
@@ -472,6 +482,8 @@ async function disconnect() {
   $("connectInfo").innerHTML = ""; $("gasBox").innerHTML = ""; $("reviewBox").innerHTML = "";
 }
 $("btnDisc").addEventListener("click", disconnect);
+$("btnSwap").onclick = () => { $("soonInfo").textContent = "Swap: ainda não está pronto. É o próximo passo."; };
+$("btnBridge").onclick = () => { $("soonInfo").textContent = "Ponte (World Chain ↔ Optimism): ainda não está pronta. Vem a seguir."; };
 $("btnConnect").addEventListener("click", connect);
 load().then(async () => { try { let off = false; try { off = localStorage.getItem("cw_off") === "1"; } catch (e) {}
   if (off) return;
