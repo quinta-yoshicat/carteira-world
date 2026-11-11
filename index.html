@@ -33,6 +33,11 @@
   .hrow{display:flex;align-items:center;gap:8px;margin-top:7px}
   .hrow .pill{margin-top:0;white-space:nowrap}
   .hrow select{flex:1;padding:6px 10px;font-size:.85rem;border-radius:10px}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;z-index:50}
+  .modal.hide{display:none}
+  .sheet{background:var(--card);width:100%;max-width:520px;max-height:90vh;overflow:auto;border-radius:22px 22px 0 0;padding:16px 16px 28px}
+  .sheethead{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+  .sheethead b{font-size:1.1rem}.sheethead button{width:auto;padding:6px 12px;margin:0;background:var(--in);color:var(--tx);border:1px solid var(--bd);border-radius:10px;font:inherit}
   .tabs{display:flex;gap:6px;margin:16px 0 10px;background:var(--card);border:1px solid var(--bd);padding:4px;border-radius:14px}
   .tabs button{flex:1;padding:10px 2px;border:0;border-radius:10px;background:transparent;color:var(--mut);font:inherit;font-size:.86rem;font-weight:600}
   .trow{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--bd)}
@@ -167,6 +172,17 @@
     </div>
     <div class="card"><details><summary>Detalhes técnicos</summary><div id="safeInfo" class="note" style="margin-top:8px"></div><div id="log"></div></details></div>
   </section>
+  <div class="modal hide" id="swapModal"><div class="sheet">
+    <div class="sheethead"><b>Swap</b><button id="swClose">Fechar</button></div>
+    <p class="note" style="margin:0">Troca um token por outro, na mesma rede, a partir do cofre. Vês tudo antes de confirmares.</p>
+    <label>Trocar este token</label><select id="swFrom"></select>
+    <label>Quantidade</label>
+    <div class="row2"><input id="swAmt" inputmode="decimal" placeholder="0.0"><button class="mini" id="swMax">Máx.</button></div>
+    <label>Para receber este token</label><select id="swTo"></select>
+    <button class="main" id="swQuote">Ver cotação</button>
+    <div id="swOut" style="margin-top:12px"></div>
+  </div></div>
+
   <div class="bottom">
     <div class="btnrow">
       <button class="main topbtn" id="btnSwap">Swap</button>
@@ -208,7 +224,7 @@ const SAFE_ABI = [
   "function nonce() view returns (uint256)",
   "function execTransaction(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,bytes signatures) payable returns (bool success)"
 ];
-const ERC20_ABI = ["function balanceOf(address) view returns (uint256)","function transfer(address,uint256) returns (bool)"];
+const ERC20_ABI = ["function balanceOf(address) view returns (uint256)","function transfer(address,uint256) returns (bool)","function approve(address,uint256) returns (bool)"];
 const $ = id => document.getElementById(id);
 const log = m => { $("log").textContent += m + "\n"; };
 $("safeAddr").textContent = SAFE; $("recvAddr").textContent = SAFE;
@@ -482,7 +498,99 @@ async function disconnect() {
   $("connectInfo").innerHTML = ""; $("gasBox").innerHTML = ""; $("reviewBox").innerHTML = "";
 }
 $("btnDisc").addEventListener("click", disconnect);
-$("btnSwap").onclick = () => { $("soonInfo").textContent = "Swap: ainda não está pronto. É o próximo passo."; };
+/* ===== swap (LI.FI) ===== */
+const NATIVE = "0x0000000000000000000000000000000000000000";
+const esc = x => String(x).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let swapQ = null;
+function swFill() {
+  const f = $("swFrom"), t = $("swTo"); f.textContent = ""; t.textContent = "";
+  TOKENS.forEach((tk, i) => {
+    if ((bal[tk.s] || 0n) > 0n) { const o = document.createElement("option"); o.value = i; o.textContent = tk.s + " (tens " + fmt(bal[tk.s], tk.d) + ")"; f.append(o); }
+    const o2 = document.createElement("option"); o2.value = i; o2.textContent = tk.s; t.append(o2);
+  });
+  const w = TOKENS.findIndex(x => x.s === NET.main); if (w >= 0) t.value = String(w);
+}
+$("btnSwap").onclick = () => { swFill(); $("swOut").textContent = ""; swapQ = null; $("swapModal").classList.remove("hide"); };
+$("swClose").onclick = () => $("swapModal").classList.add("hide");
+$("swMax").onclick = () => { const tk = TOKENS[$("swFrom").value]; if (tk) $("swAmt").value = ethers.formatUnits(bal[tk.s] || 0n, tk.d); };
+function packTxs(txs) {
+  return ethers.concat(txs.map(t => { const d = ethers.getBytes(t.data); return ethers.concat(["0x00", ethers.getAddress(t.to), ethers.zeroPadValue(ethers.toBeHex(t.value), 32), ethers.zeroPadValue(ethers.toBeHex(d.length), 32), d]); }));
+}
+function swapArgs() {
+  const txs = swapQ.txs;
+  if (txs.length === 1) return [ethers.getAddress(txs[0].to), txs[0].value, txs[0].data, 0, 0, 0, 0, ethers.ZeroAddress, ethers.ZeroAddress, sigFor(account)];
+  const data = new ethers.Interface(["function multiSend(bytes transactions)"]).encodeFunctionData("multiSend", [packTxs(txs)]);
+  return [MULTISEND, 0, data, 1, 0, 0, 0, ethers.ZeroAddress, ethers.ZeroAddress, sigFor(account)];
+}
+$("swQuote").onclick = async () => {
+  const out = $("swOut"); swapQ = null; out.innerHTML = `<span class="note">A pedir cotação…</span>`;
+  try {
+    if (!account) throw new Error("Primeiro liga a MetaMask (botão no topo).");
+    if (!owners.includes(account.toLowerCase())) throw new Error("A conta ligada não é a dona da carteira.");
+    const ftk = TOKENS[$("swFrom").value], ttk = TOKENS[$("swTo").value];
+    if (!ftk || !ttk) throw new Error("Escolhe os tokens.");
+    if (ftk === ttk) throw new Error("Escolhe dois tokens diferentes.");
+    let amt; try { amt = ethers.parseUnits($("swAmt").value.trim().replace(",", "."), ftk.d); } catch { throw new Error("Quantidade inválida."); }
+    if (amt <= 0n) throw new Error("A quantidade tem de ser maior que zero.");
+    if (amt > (bal[ftk.s] || 0n)) throw new Error("Não tens tanto " + ftk.s + " na carteira.");
+    const url = `https://li.quest/v1/quote?fromChain=${CHAIN_ID}&toChain=${CHAIN_ID}&fromToken=${ftk.a || NATIVE}&toToken=${ttk.a || NATIVE}&fromAmount=${amt}&fromAddress=${SAFE}&toAddress=${SAFE}&slippage=0.005&integrator=carteira-world`;
+    const r = await fetch(url); const q = await r.json();
+    if (!r.ok || !q.transactionRequest) throw new Error("Sem cotação: " + (q.message || ("erro " + r.status)));
+    const est = q.estimate, tr = q.transactionRequest;
+    const txs = [];
+    if (ftk.a) {
+      const sp = est.approvalAddress;
+      if (!sp || sp === NATIVE) throw new Error("A cotação não trouxe o contrato a aprovar.");
+      txs.push({ to: ftk.a, value: 0n, data: erc20If.encodeFunctionData("approve", [ethers.getAddress(sp), amt]) });
+    }
+    txs.push({ to: tr.to, value: BigInt(tr.value || 0), data: tr.data });
+    swapQ = { txs, ftk, ttk };
+    const tdec = (q.action && q.action.toToken && q.action.toToken.decimals) || ttk.d;
+    const got = BigInt(est.toAmount), min = BigInt(est.toAmountMin);
+    const fu = parseFloat(est.fromAmountUSD || "0"), tu = parseFloat(est.toAmountUSD || "0");
+    const loss = fu > 0 ? (fu - tu) / fu * 100 : 0;
+    let fees = 0; (est.feeCosts || []).forEach(f => fees += parseFloat(f.amountUSD || "0")); (est.gasCosts || []).forEach(g => fees += parseFloat(g.amountUSD || "0"));
+    const route = (q.toolDetails && q.toolDetails.name) || q.tool || "?";
+    const big = loss > 3;
+    out.innerHTML = `<div class="sum">
+      <div><span>Trocas</span><span>${fmt(amt, ftk.d)} ${esc(ftk.s)}</span></div>
+      <div><span>Recebes cerca de</span><span>${fmt(got, tdec)} ${esc(ttk.s)}</span></div>
+      <div><span>Mínimo garantido</span><span>${fmt(min, tdec)} ${esc(ttk.s)}</span></div>
+      <div><span>Valor enviado / recebido</span><span>$${fu.toFixed(2)} / $${tu.toFixed(2)}</span></div>
+      <div><span>Taxas estimadas</span><span>$${fees.toFixed(2)}</span></div>
+      <div><span>Rota</span><span>${esc(route)}</span></div></div>` +
+      (big ? `<div class="warn"><b>Atenção:</b> vais receber cerca de ${loss.toFixed(1)}% a menos do que enviaste. Em valores pequenos as taxas fixas pesam muito.<label style="margin:8px 0 0"><input type="checkbox" id="swOk" style="width:auto"> Percebo e quero continuar</label></div>` : "") +
+      `<button class="sec" id="swSim">1. Simular (não gasta nada)</button>
+       <button class="main" id="swSend" disabled>2. Trocar a sério</button>
+       <div id="swMsg" class="note" style="margin-top:8px"></div>`;
+    $("swSim").onclick = swSimulate; $("swSend").onclick = swSend;
+  } catch (e) { out.innerHTML = `<div class="warn">${esc(e.message || e)}</div>`; }
+};
+async function swSimulate() {
+  const m = $("swMsg"); m.textContent = "A simular…";
+  try {
+    await ensureChain(); await refreshGas();
+    const c = await safeWrite();
+    const ok = await c.execTransaction.staticCall(...swapArgs());
+    if (!ok) throw new Error("A simulação deu falha.");
+    const needOk = $("swOk"); const okGas = ownerEth > 0n;
+    m.innerHTML = `<span class="ok">Simulação OK.</span> A troca devia passar.` + (okGas ? "" : ` <span class="bad">Falta ETH na conta da MetaMask para a taxa.</span>`);
+    const upd = () => { $("swSend").disabled = !okGas || (needOk && !needOk.checked); };
+    if (needOk) needOk.onchange = upd; upd();
+  } catch (e) { m.innerHTML = `<span class="bad">A simulação falhou: ${esc(e.shortMessage || e.message || e)}</span>`; $("swSend").disabled = true; }
+}
+async function swSend() {
+  const m = $("swMsg"); $("swSend").disabled = true; m.textContent = "Confirma na MetaMask…";
+  try {
+    if (swapArgs()[0] === MULTISEND && (await rpc.getCode(MULTISEND)) === "0x") throw new Error("O contrato de lotes não existe nesta rede.");
+    const c = await safeWrite();
+    const tx = await c.execTransaction(...swapArgs());
+    m.innerHTML = `Enviado. A esperar confirmação…<br><span class="addr">${esc(tx.hash)}</span>`;
+    const r = await tx.wait();
+    m.innerHTML = r.status === 1 ? `<span class="ok">Concluído ✓</span><br><a href="${NET.ex}/tx/${esc(tx.hash)}" target="_blank" rel="noopener">Ver no explorador</a>` : `<span class="bad">A transação falhou.</span>`;
+    load();
+  } catch (e) { m.innerHTML = `<span class="bad">Não trocou: ${esc(e.shortMessage || e.message || e)}</span>`; }
+}
 $("btnBridge").onclick = () => { $("soonInfo").textContent = "Ponte (World Chain ↔ Optimism): ainda não está pronta. Vem a seguir."; };
 $("btnConnect").addEventListener("click", connect);
 load().then(async () => { try { let off = false; try { off = localStorage.getItem("cw_off") === "1"; } catch (e) {}
