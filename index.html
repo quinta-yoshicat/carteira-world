@@ -61,10 +61,11 @@
   </div>
 
   <div class="hero">
-    <div class="lbl">Carteira (Safe na World Chain)</div>
+    <div class="lbl" id="netLbl"></div>
     <div class="big" id="bigWld">…</div>
     <div class="addr" id="safeAddr"></div>
     <span class="pill" id="pillConn">Wallet não ligada</span>
+    <select id="netSel" style="margin-top:12px"><option value="480">Rede: World Chain</option><option value="10">Rede: Optimism</option></select>
   </div>
 
   <div class="tabs">
@@ -132,7 +133,7 @@
   <section id="t-receber" class="hide">
     <div class="card">
       <h2>Receber tokens</h2>
-      <p class="note" style="margin:0 0 8px">Para receberes, dá este endereço (é o da tua carteira, o mesmo da World App). Só na <b>World Chain</b>.</p>
+      <p class="note" style="margin:0 0 8px">Para receberes, dá este endereço (é o da tua carteira, o mesmo da World App). Só na rede <b class="netname">World Chain</b>.</p>
       <div class="addr" id="recvAddr" style="color:var(--tx);font-size:.82rem"></div>
       <button class="sec" id="btnCopy">Copiar endereço</button>
     </div>
@@ -148,7 +149,7 @@
         <li>Escolhes o token, o endereço e a quantidade.</li>
         <li>A MetaMask pede para confirmares. O cofre abre e envia.</li>
       </ol>
-      <p class="note">A taxa da rede (muito pequena) é paga em ETH pela <b>conta da MetaMask</b>, não pelo cofre. Por isso essa conta precisa de um pouco de ETH na World Chain.</p>
+      <p class="note">A taxa da rede (muito pequena) é paga em ETH pela <b>conta da MetaMask</b>, não pelo cofre. Por isso essa conta precisa de um pouco de ETH na rede escolhida.</p>
       <p class="note">Esta página não guarda a tua chave nem a vê. Quem assina é a MetaMask.</p>
     </div>
     <div class="card">
@@ -162,14 +163,28 @@
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
 <script>
 const SAFE = "0xd047Ffa1f9eBf478Ef020f5Dce3c5AD3229Fd2B1";
-const CHAIN_ID = 480;
-const RPCS = ["https://worldchain-mainnet.g.alchemy.com/public","https://480.rpc.thirdweb.com","https://worldchain-mainnet.gateway.tenderly.co"];
-const TOKENS = [
-  { s:"WLD",  n:"Worldcoin",     a:"0x2cFc85d8E48F8EAB294be644d9E25C3030863003", d:18 },
-  { s:"USDC", n:"USD Coin",      a:"0x79A02482A880bCE3F13e09Da970dC34db4CD24d1", d:6 },
-  { s:"WETH", n:"Wrapped Ether", a:"0x4200000000000000000000000000000000000006", d:18 },
-  { s:"ETH",  n:"Ether",         a:null, d:18 }
-];
+const NETS = {
+  480: { id:480, name:"World Chain", hex:"0x1e0", main:"WLD",
+    rpcs:["https://worldchain-mainnet.g.alchemy.com/public","https://480.rpc.thirdweb.com","https://worldchain-mainnet.gateway.tenderly.co"],
+    api:"https://worldchain-mainnet.explorer.alchemy.com", ex:"https://worldchain-mainnet.explorer.alchemy.com",
+    tokens:[
+      { s:"WLD",  n:"Worldcoin",     a:"0x2cFc85d8E48F8EAB294be644d9E25C3030863003", d:18 },
+      { s:"USDC", n:"USD Coin",      a:"0x79A02482A880bCE3F13e09Da970dC34db4CD24d1", d:6 },
+      { s:"WETH", n:"Wrapped Ether", a:"0x4200000000000000000000000000000000000006", d:18 },
+      { s:"ETH",  n:"Ether",         a:null, d:18 } ] },
+  10: { id:10, name:"Optimism", hex:"0xa", main:"ETH",
+    rpcs:["https://mainnet.optimism.io","https://optimism-rpc.publicnode.com","https://1rpc.io/op"],
+    api:"https://explorer.optimism.io", ex:"https://explorer.optimism.io",
+    tokens:[
+      { s:"ETH",  n:"Ether",         a:null, d:18 },
+      { s:"WLD",  n:"Worldcoin",     a:"0xdc6ff44d5d932cbd77b52e5612ba0529dc6226f1", d:18 },
+      { s:"USDC", n:"USD Coin",      a:"0x0b2c639c533813f4aa9d7837caf62653d097ff85", d:6 },
+      { s:"USDC.e", n:"USD Coin (bridged)", a:"0x7f5c764cbc14f9669b88837ca1490cca17c31607", d:6 },
+      { s:"OP",   n:"Optimism",      a:"0x4200000000000000000000000000000000000042", d:18 },
+      { s:"WETH", n:"Wrapped Ether", a:"0x4200000000000000000000000000000000000006", d:18 } ] }
+};
+const NET = NETS[new URLSearchParams(location.search).get("rede") === "10" ? 10 : 480];
+const CHAIN_ID = NET.id, RPCS = NET.rpcs, TOKENS = NET.tokens;
 const SAFE_ABI = [
   "function getOwners() view returns (address[])",
   "function getThreshold() view returns (uint256)",
@@ -181,6 +196,10 @@ const ERC20_ABI = ["function balanceOf(address) view returns (uint256)","functio
 const $ = id => document.getElementById(id);
 const log = m => { $("log").textContent += m + "\n"; };
 $("safeAddr").textContent = SAFE; $("recvAddr").textContent = SAFE;
+$("netLbl").textContent = "Carteira (Safe na " + NET.name + ")";
+$("netSel").value = String(CHAIN_ID);
+$("netSel").onchange = () => { location.search = "?rede=" + $("netSel").value; };
+document.querySelectorAll(".netname").forEach(e => e.textContent = NET.name);
 
 let rpc = null, owners = [], account = null, bal = {}, ownerEth = 0n, pending = null;
 
@@ -199,7 +218,7 @@ let all = [], allLoaded = false;
 async function loadAll() {
   const st = $("allStatus"); st.textContent = "A ler a lista completa…";
   try {
-    const r = await fetch(`https://worldchain-mainnet.explorer.alchemy.com/api/v2/addresses/${SAFE}/token-balances`);
+    const r = await fetch(`${NET.api}/api/v2/addresses/${SAFE}/token-balances`);
     if (!r.ok) throw new Error("HTTP " + r.status);
     const j = await r.json();
     const arr = Array.isArray(j) ? j : (j.items || []);
@@ -279,8 +298,9 @@ $("btnAllSend").onclick = async () => {
     const dest = allDest(), sel = all.filter(t => t.sel && !t.bad);
     if (!sel.length) throw new Error("Seleciona pelo menos um token.");
     await refreshGas();
-    if (ownerEth === 0n) throw new Error("A conta da MetaMask não tem ETH na World Chain para pagar a taxa.");
+    if (ownerEth === 0n) throw new Error("A conta da MetaMask não tem ETH na " + NET.name + " para pagar a taxa.");
     btn.disabled = true; await ensureChain();
+    if ((await rpc.getCode(MULTISEND)) === "0x") throw new Error("O contrato de envio em lote não existe nesta rede.");
     const c = await safeWrite(), SIZE = 25, total = Math.ceil(sel.length / SIZE);
     for (let i = 0; i < sel.length; i += SIZE) {
       const chunk = sel.slice(i, i + SIZE), n = i / SIZE + 1;
@@ -303,10 +323,10 @@ $("btnAllSend").onclick = async () => {
 
 async function getRpc() {
   for (const url of RPCS) {
-    try { const p = new ethers.JsonRpcProvider(url, CHAIN_ID, { staticNetwork: true }); await p.getBlockNumber(); log("Ligação à World Chain: OK"); return p; }
+    try { const p = new ethers.JsonRpcProvider(url, CHAIN_ID, { staticNetwork: true }); await p.getBlockNumber(); log("Ligação à " + NET.name + ": OK"); return p; }
     catch (e) { log("RPC falhou, a tentar outro…"); }
   }
-  throw new Error("Nenhum servidor da World Chain respondeu.");
+  throw new Error("Nenhum servidor da " + NET.name + " respondeu.");
 }
 const fmt = (v, d) => { const s = ethers.formatUnits(v, d); const [i, f = ""] = s.split("."); return f.replace(/0+$/, "") ? i + "." + f.replace(/0+$/, "").slice(0, 6) : i; };
 
@@ -324,7 +344,7 @@ async function load() {
       html += `<div class="tok"><div class="ico">${tk.s.slice(0,3)}</div><div class="n">${tk.s}<small>${tk.n}</small></div><div class="v">${fmt(b, tk.d)}</div></div>`;
     }
     $("balances").innerHTML = html;
-    $("bigWld").textContent = fmt(bal.WLD, 18) + " WLD";
+    $("bigWld").textContent = fmt(bal[NET.main], 18) + " " + NET.main;
     $("sendTok").innerHTML = TOKENS.map(tk => `<option value="${tk.s}">${tk.s} (tens ${fmt(bal[tk.s], tk.d)})</option>`).join("");
   } catch (e) {
     $("balances").innerHTML = `<span class="bad">Não consegui ler: ${e.message}</span>`;
@@ -336,7 +356,7 @@ async function refreshGas() {
   if (!account || !rpc) return;
   ownerEth = await rpc.getBalance(account);
   $("gasBox").innerHTML = ownerEth === 0n
-    ? `<div class="warn">A conta da MetaMask (${account.slice(0,6)}…${account.slice(-4)}) tem <b>0 ETH</b> na World Chain. Precisa de um pouco de ETH para pagar a taxa de rede. Sem isso o envio não passa.</div>`
+    ? `<div class="warn">A conta da MetaMask (${account.slice(0,6)}…${account.slice(-4)}) tem <b>0 ETH</b> na ${NET.name}. Precisa de um pouco de ETH para pagar a taxa de rede. Sem isso o envio não passa.</div>`
     : `<div class="note" style="margin-top:8px">ETH para taxas na conta da MetaMask: ${fmt(ownerEth, 18)}</div>`;
 }
 
@@ -344,10 +364,10 @@ async function ensureChain() {
   const eth = window.ethereum;
   const id = parseInt(await eth.request({ method: "eth_chainId" }), 16);
   if (id === CHAIN_ID) return;
-  try { await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x1e0" }] }); }
+  try { await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: NET.hex }] }); }
   catch (e) {
     if (e.code === 4902) {
-      await eth.request({ method: "wallet_addEthereumChain", params: [{ chainId: "0x1e0", chainName: "World Chain", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: ["https://worldchain-mainnet.g.alchemy.com/public"], blockExplorerUrls: ["https://worldchain-mainnet.explorer.alchemy.com"] }] });
+      await eth.request({ method: "wallet_addEthereumChain", params: [{ chainId: NET.hex, chainName: NET.name, nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: [NET.rpcs[0]], blockExplorerUrls: [NET.ex] }] });
     } else throw e;
   }
 }
@@ -392,7 +412,7 @@ $("btnReview").onclick = async () => {
   box.innerHTML = `<div class="card" style="margin-top:12px"><h2>Confirma antes de enviar</h2><div class="sum">
     <div><span>Enviar</span><span>${fmt(amt, tk.d)} ${tk.s}</span></div>
     <div><span>Para</span><span class="addr" style="color:var(--tx)">${pending.to}</span></div>
-    <div><span>Rede</span><span>World Chain</span></div></div>
+    <div><span>Rede</span><span>${NET.name}</span></div></div>
     <div class="warn">Confere o endereço com cuidado. Envios em blockchain não se desfazem.</div>
     <button class="sec" id="btnSim">1. Simular (não gasta nada)</button>
     <button class="main" id="btnSend" disabled>2. Enviar a sério</button>
@@ -427,14 +447,14 @@ async function sendIt() {
     const tx = await c.execTransaction(...args());
     out.innerHTML = `Enviado. A esperar confirmação…<br><span class="addr">${tx.hash}</span>`;
     const r = await tx.wait();
-    out.innerHTML = r.status === 1 ? `<span class="ok">Concluído ✓</span><br><a href="https://worldchain-mainnet.explorer.alchemy.com/tx/${tx.hash}" target="_blank" rel="noopener">Ver no explorador</a>` : `<span class="bad">A transação falhou.</span>`;
+    out.innerHTML = r.status === 1 ? `<span class="ok">Concluído ✓</span><br><a href="${NET.ex}/tx/${tx.hash}" target="_blank" rel="noopener">Ver no explorador</a>` : `<span class="bad">A transação falhou.</span>`;
     load();
   } catch (e) { out.innerHTML = `<span class="bad">Não enviou: ${(e.shortMessage || e.message || e)}</span>`; }
 }
 
 $("btnCopy").onclick = async () => { try { await navigator.clipboard.writeText(SAFE); $("btnCopy").textContent = "Copiado ✓"; } catch { $("btnCopy").textContent = "Copia manualmente acima"; } };
 $("btnConnect").addEventListener("click", connect);
-load();
+load().then(async () => { try { const a = window.ethereum && await window.ethereum.request({ method: "eth_accounts" }); if (a && a.length) connect(); } catch (e) {} });
 </script>
 </body>
 </html>
