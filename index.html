@@ -20,7 +20,10 @@
   .pill{display:inline-block;font-size:.75rem;padding:3px 10px;border-radius:99px;background:var(--in);color:var(--mut);margin-top:8px}
   .pill.ok{background:rgba(10,125,59,.12);color:var(--ok);font-weight:600}
   .pill.bad{background:rgba(180,35,24,.12);color:var(--bad);font-weight:600}
-  .topbtn{margin-top:12px;background:#fff;color:#3b2fe0;padding:11px}
+  .btnrow{display:flex;gap:8px;margin-top:12px}
+  .top button.topbtn{margin:0;flex:1;width:auto;background:#fff;color:#3b2fe0;padding:12px}
+  .top button.topbtn.on{background:rgba(255,255,255,.2);color:#fff;pointer-events:none}
+  .top button.discbtn{flex:0 0 36%;background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.75)}
   .topinfo{margin-top:8px;font-size:.74rem;color:#fff;word-break:break-all}
   .topinfo .addr,.topinfo .note{color:#fff;opacity:.92}
   .topinfo .bad{display:block;background:#fff;padding:6px 10px;border-radius:10px}
@@ -65,7 +68,7 @@
   <div class="top">
     <h1>Carteira World</h1>
     <p>A tua carteira da World App, usada fora da World App.</p>
-    <button class="main topbtn" id="btnConnect">Ligar MetaMask</button>
+    <div class="btnrow"><button class="main topbtn" id="btnConnect">Ligar MetaMask</button><button class="main topbtn discbtn hide" id="btnDisc">Desligar</button></div>
     <div id="connectInfo" class="topinfo"></div>
   </div>
 
@@ -376,6 +379,7 @@ async function ensureChain() {
 }
 
 async function connect() {
+  try { localStorage.removeItem("cw_off"); } catch (e) {}
   $("connectInfo").innerHTML = `<span class="note">A pedir ligação à MetaMask…</span>`;
   let eth = window.ethereum;
   if (!eth) { await new Promise(r => setTimeout(r, 1500)); eth = window.ethereum; }
@@ -389,6 +393,8 @@ async function connect() {
     pill.className = "pill " + (isOwner ? "ok" : "bad");
     pill.textContent = isOwner ? "Ligado · és o dono ✓" : "Ligado · esta conta NÃO é a dona";
     $("btnConnect").textContent = isOwner ? "Ligado ✓" : "Ligar outra conta";
+    $("btnConnect").className = "main topbtn" + (isOwner ? " on" : "");
+    $("btnDisc").classList.remove("hide");
     $("connectInfo").innerHTML = `<div class="addr">${account}</div>` + (isOwner ? "" : `<div class="warn">Esta conta não manda na carteira. Muda de conta na MetaMask e liga outra vez.</div>`);
     await refreshGas();
   } catch (e) { $("connectInfo").innerHTML = `<span class="bad">Não ligou: ${e.message || e}</span>`; }
@@ -456,8 +462,20 @@ async function sendIt() {
 }
 
 $("btnCopy").onclick = async () => { try { await navigator.clipboard.writeText(SAFE); $("btnCopy").textContent = "Copiado ✓"; } catch { $("btnCopy").textContent = "Copia manualmente acima"; } };
+async function disconnect() {
+  try { await window.ethereum.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] }); } catch (e) {}
+  try { localStorage.setItem("cw_off", "1"); } catch (e) {}
+  account = null; ownerEth = 0n; pending = null;
+  $("btnConnect").textContent = "Ligar MetaMask"; $("btnConnect").className = "main topbtn";
+  $("btnDisc").classList.add("hide");
+  $("pillConn").className = "pill"; $("pillConn").textContent = "Wallet não ligada";
+  $("connectInfo").innerHTML = ""; $("gasBox").innerHTML = ""; $("reviewBox").innerHTML = "";
+}
+$("btnDisc").addEventListener("click", disconnect);
 $("btnConnect").addEventListener("click", connect);
-load().then(async () => { try { const a = window.ethereum && await window.ethereum.request({ method: "eth_accounts" }); if (a && a.length) connect(); } catch (e) {} });
+load().then(async () => { try { let off = false; try { off = localStorage.getItem("cw_off") === "1"; } catch (e) {}
+  if (off) return;
+  const a = window.ethereum && await window.ethereum.request({ method: "eth_accounts" }); if (a && a.length) connect(); } catch (e) {} });
 </script>
 </body>
 </html>
