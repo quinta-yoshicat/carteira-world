@@ -38,6 +38,8 @@
   .sheet{background:var(--card);width:100%;max-width:520px;max-height:90vh;overflow:auto;border-radius:22px 22px 0 0;padding:16px 16px 28px}
   .sheethead{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
   .sheethead b{font-size:1.1rem}.sheethead button{width:auto;padding:6px 12px;margin:0;background:var(--in);color:var(--tx);border:1px solid var(--bd);border-radius:10px;font:inherit}
+  .linkrow{display:flex;gap:8px;margin-top:8px}
+  .lbtn{flex:1;text-align:center;padding:10px;border-radius:12px;border:1px solid var(--bd);background:var(--in);color:var(--acc);font:inherit;font-weight:600;text-decoration:none;font-size:.9rem}
   .tabs{display:flex;gap:6px;margin:16px 0 10px;background:var(--card);border:1px solid var(--bd);padding:4px;border-radius:14px}
   .tabs button{flex:1;padding:10px 2px;border:0;border-radius:10px;background:transparent;color:var(--mut);font:inherit;font-size:.86rem;font-weight:600}
   .trow{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--bd)}
@@ -482,7 +484,7 @@ async function sendIt() {
     const tx = await c.execTransaction(...args());
     out.innerHTML = `Enviado. A esperar confirmação…<br><span class="addr">${tx.hash}</span>`;
     const r = await tx.wait();
-    out.innerHTML = r.status === 1 ? `<span class="ok">Concluído ✓</span><br><a href="${NET.ex}/tx/${tx.hash}" target="_blank" rel="noopener">Ver no explorador</a>` : `<span class="bad">A transação falhou.</span>`;
+    out.innerHTML = r.status === 1 ? `<span class="ok">Concluído ✓</span><br>${txLinks(tx.hash)}` : `<span class="bad">A transação falhou.</span>`;
     load();
   } catch (e) { out.innerHTML = `<span class="bad">Não enviou: ${(e.shortMessage || e.message || e)}</span>`; }
 }
@@ -500,6 +502,15 @@ async function disconnect() {
 $("btnDisc").addEventListener("click", disconnect);
 /* ===== swap (LI.FI) ===== */
 const NATIVE = "0x0000000000000000000000000000000000000000";
+function txLinks(hash) {
+  const u = NET.ex + "/tx/" + hash;
+  const intent = "intent://" + u.replace("https://", "") + "#Intent;scheme=https;package=com.android.chrome;end";
+  return `<div class="linkrow"><a class="lbtn" href="${intent}">Abrir no Chrome</a><button class="lbtn" data-copy="${u}">Copiar link</button></div><div class="addr" style="margin-top:6px">${u}</div>`;
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest && e.target.closest("[data-copy]"); if (!b) return;
+  try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copiado ✓"; } catch (x) { b.textContent = "Copia o link abaixo"; }
+});
 const esc = x => String(x).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 let swapQ = null;
 function swFill() {
@@ -587,7 +598,7 @@ async function swSend() {
     const tx = await c.execTransaction(...swapArgs());
     m.innerHTML = `Enviado. A esperar confirmação…<br><span class="addr">${esc(tx.hash)}</span>`;
     const r = await tx.wait();
-    m.innerHTML = r.status === 1 ? `<span class="ok">Concluído ✓</span><br><a href="${NET.ex}/tx/${esc(tx.hash)}" target="_blank" rel="noopener">Ver no explorador</a>` : `<span class="bad">A transação falhou.</span>`;
+    m.innerHTML = r.status === 1 ? `<span class="ok">Concluído ✓</span><br>${txLinks(tx.hash)}` : `<span class="bad">A transação falhou.</span>`;
     load();
   } catch (e) { m.innerHTML = `<span class="bad">Não trocou: ${esc(e.shortMessage || e.message || e)}</span>`; }
 }
